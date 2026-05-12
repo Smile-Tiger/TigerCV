@@ -1,0 +1,46 @@
+// ============================================
+// 全局颜色变量
+// ============================================
+
+// Slate 系列 (灰蓝色)
+$slate-900: #1e293b;
+$slate-800: #1e293b;
+$slate-700: #334155;
+$slate-600: #475569;
+$slate-500: #64748b;
+$slate-400: #94a3b8;
+$slate-300: #cbd5e1;
+$slate-200: #e2e8f0;
+$slate-100: #f1f5f9;
+$slate-50: #f8fafc;
+
+// Blue 系列
+$blue-600: #2563eb;
+$blue-500: #3b82f6;
+$blue-400: #60a5fa;
+$blue-300: #93c5fd;
+$blue-200: #dbeafe;
+$blue-100: #eef4fb;
+$blue-50: #f8fbff;
+
+// 语义化颜色
+$color-primary: $blue-600;
+$color-primary-light: #409eff;
+$color-text-primary: #172033;
+$color-text-secondary: #667085;
+$color-text-muted: #475569;
+$color-border: rgb(226 232 240 / 82%);
+$color-border-light: rgb(203 213 225 / 70%);
+$color-bg-white: rgb(255 255 255 / 78%);
+$color-bg-white-solid: #ffffff;
+$color-bg-page: linear-gradient(135deg, #eef3f9 0%, #e9eef7 100%);
+
+// 功能色
+$color-success: #34d399;
+$color-warning: #fbbf24;
+$color-error: #fb7185;
+
+// 阴影颜色
+$shadow-color: rgb(148 163 184 / 18%);
+$shadow-color-light: rgb(148 163 184 / 10%);
+$shadow-color-dark: rgb(31 41 55 / 12%);
