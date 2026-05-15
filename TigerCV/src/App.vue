@@ -5,7 +5,21 @@ import Background from '@/components/Background.vue'
 </script>
 
 <template>
-  <Background />
-  <AppNav />
-  <PageTransition />
+  <div class="app-shell">
+    <Background />
+    <AppNav />
+    <main class="app-content">
+      <PageTransition />
+    </main>
+  </div>
 </template>
+
+<style scoped lang="scss">
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-content {
+  padding-top: 64px;
+}
+</style>

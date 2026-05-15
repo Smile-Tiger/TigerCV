@@ -131,7 +131,8 @@ onMounted(() => {
 onUnmounted(() => {
   // 清理 particles.js
   if (typeof window !== 'undefined' && window.pJSDom) {
-    window.pJSDom.forEach((instance) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    window.pJSDom.forEach((instance: any) => {
       if (instance && instance.pJS && instance.pJS.fn && instance.pJS.fn.vendors) {
         instance.pJS.fn.vendors.destroypJS()
       }
@@ -158,7 +159,7 @@ onUnmounted(() => {
   height: 100%;
   z-index: -1;
   pointer-events: none;
-  background: #fff
+  background: #fff;
 }
 
 :deep(.particles-js-canvas-el) {

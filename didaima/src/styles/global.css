@@ -1,0 +1,9 @@
+:root {
+  --workbench-bg: #edf2f9;
+}
+
+body {
+  font-family: 'HarmonyOS Sans SC', 'Source Han Sans CN', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #243144;
+  background: var(--workbench-bg);
+}

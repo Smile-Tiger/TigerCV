@@ -19,13 +19,29 @@ body,
 }
 
 html {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-size: 16px;
   text-size-adjust: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
 }
 
 body {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
   background: linear-gradient(135deg, #eef3f9 0%, #e9eef7 100%);
   color: #334155;
   font-family:
@@ -42,7 +58,16 @@ body {
 }
 
 #app {
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
 }
 
 button,

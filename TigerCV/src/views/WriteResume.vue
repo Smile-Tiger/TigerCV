@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
+import markdownItAttrs from 'markdown-it-attrs'
 
 const markdown = ref('')
 
@@ -8,21 +9,38 @@ const editorRef = ref<HTMLTextAreaElement | null>(null)
 const rulerRef = ref<HTMLDivElement | null>(null)
 const activeLine = ref(1)
 const visualLineCount = ref(1)
-const previewScale = ref(0.72)
+const previewScale = ref(0.9)
+const splitRatio = ref(0.4)
+const pageRef = ref<HTMLElement | null>(null)
+const isDraggingSplit = ref(false)
 
 const MIN_PREVIEW_SCALE = 0.45
 const MAX_PREVIEW_SCALE = 1.8
 const PREVIEW_SCALE_STEP = 0.05
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024
+
+const uploadDialogVisible = ref(false)
+const uploadFiles = ref<any[]>([])
+
+const imageStore = new Map<string, { file: File; objectUrl: string }>()
 
 const previewScalePercent = computed(() => `${Math.round(previewScale.value * 100)}%`)
 const previewPaperStyle = computed(() => ({
   transform: `scale(${previewScale.value})`,
 }))
 
+const gridTemplateColumns = computed(() => `${splitRatio.value}fr 10px ${1 - splitRatio.value}fr`)
+
 const parser = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   breaks: true,
+})
+
+parser.use(markdownItAttrs, {
+  leftDelimiter: '{',
+  rightDelimiter: '}',
+  allowedAttributes: ['width', 'height', 'style', 'class'],
 })
 
 const previewHtml = computed(() => parser.render(markdown.value))
@@ -65,6 +83,44 @@ const handlePreviewWheel = (event: WheelEvent) => {
   event.preventDefault()
   const direction = event.deltaY > 0 ? -1 : 1
   previewScale.value = clampPreviewScale(previewScale.value + direction * PREVIEW_SCALE_STEP)
+}
+
+const updateSplitRatio = (clientX: number) => {
+  const page = pageRef.value
+  if (!page) return
+
+  const rect = page.getBoundingClientRect()
+  const minRatio = 0.26
+  const maxRatio = 0.56
+  const dividerWidth = 10
+  const usableWidth = rect.width - dividerWidth
+  if (usableWidth <= 0) return
+
+  const nextRatio = (clientX - rect.left) / usableWidth
+  splitRatio.value = Math.min(maxRatio, Math.max(minRatio, nextRatio))
+}
+
+const stopDragging = () => {
+  if (!isDraggingSplit.value) return
+  isDraggingSplit.value = false
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  window.removeEventListener('pointermove', onSplitPointerMove)
+  window.removeEventListener('pointerup', stopDragging)
+}
+
+function onSplitPointerMove(event: PointerEvent) {
+  updateSplitRatio(event.clientX)
+}
+
+const startDraggingSplit = (event: PointerEvent) => {
+  event.preventDefault()
+  isDraggingSplit.value = true
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  updateSplitRatio(event.clientX)
+  window.addEventListener('pointermove', onSplitPointerMove)
+  window.addEventListener('pointerup', stopDragging)
 }
 
 const getSelection = () => {
@@ -264,6 +320,54 @@ const handleEditorKeyup = () => {
   refreshEditorLines()
 }
 
+const openUploadDialog = () => {
+  uploadFiles.value = []
+  uploadDialogVisible.value = true
+}
+
+const handleUploadExceed = () => {
+  uploadDialogVisible.value = false
+  ElMessage.warning('只能上传一张图片')
+}
+
+const confirmUpload = () => {
+  if (uploadFiles.value.length === 0) {
+    ElMessage.warning('请先选择一张图片')
+    return
+  }
+
+  const file = uploadFiles.value[0].raw
+  if (!file) {
+    ElMessage.error('文件读取失败')
+    return
+  }
+
+  if (file.size > MAX_IMAGE_SIZE) {
+    ElMessage.error('图片大小不能超过 5MB')
+    return
+  }
+
+  const objectUrl = URL.createObjectURL(file)
+  imageStore.set(objectUrl, { file, objectUrl })
+
+  const fileName = file.name || 'image'
+  const { textarea, start } = getSelection()
+  const mdImage = `![${fileName}](${objectUrl}){width=300 height=400}`
+
+  markdown.value =
+    markdown.value.slice(0, start) + mdImage + '\n' + markdown.value.slice(start)
+
+  nextTick(() => {
+    textarea?.focus()
+    const cursorPos = start + mdImage.length + 1
+    textarea?.setSelectionRange(cursorPos, cursorPos)
+    refreshEditorLines()
+  })
+
+  ElMessage.success('图片已插入')
+  uploadDialogVisible.value = false
+}
+
 onMounted(() => {
   refreshEditorLines()
   window.addEventListener('resize', refreshEditorLines)
@@ -271,12 +375,16 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', refreshEditorLines)
+  for (const { objectUrl } of imageStore.values()) {
+    URL.revokeObjectURL(objectUrl)
+  }
+  imageStore.clear()
 })
 
 </script>
 
 <template>
-  <main class="page container">
+  <main ref="pageRef" class="page container" :class="{ dragging: isDraggingSplit }" :style="{ gridTemplateColumns }">
     <section class="panel editor-panel">
       <div class="editor-topbar">
         <span class="dot dot-red"></span>
@@ -290,7 +398,14 @@ onBeforeUnmount(() => {
           <em>I</em>
         </button>
         <button class="tool-btn" type="button" title="添加链接" @mousedown.prevent @click="toggleLink">
-          <span>🔗</span>
+          <el-icon>
+            <EpPaperclip />
+          </el-icon>
+        </button>
+        <button class="tool-btn" type="button" title="添加图片" @mousedown.prevent @click="openUploadDialog">
+          <el-icon>
+            <EpPicture />
+          </el-icon>
         </button>
       </div>
       <div class="editor-shell">
@@ -309,6 +424,10 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <div class="splitter" :class="{ 'is-active': isDraggingSplit }" @pointerdown="startDraggingSplit">
+      <span class="splitter-line"></span>
+    </div>
+
     <section class="panel preview-panel">
       <div class="preview-toolbar">
         <div class="preview-toolbar-left">
@@ -325,6 +444,28 @@ onBeforeUnmount(() => {
       </div>
     </section>
   </main>
+
+  <el-dialog v-model="uploadDialogVisible" title="上传图片" width="520px" :close-on-click-modal="false" destroy-on-close>
+    <el-upload v-model:file-list="uploadFiles" drag :auto-upload="false" :limit="1" :on-exceed="handleUploadExceed"
+      :accept="'.jpg,.jpeg,.png,.gif,.webp,.bmp'" list-type="picture">
+      <div class="upload-placeholder">
+        <el-icon class="upload-icon">
+          <EpUploadFilled />
+        </el-icon>
+        <div class="upload-text">
+          <span>将图片拖拽到此处，或</span>
+          <em>点击上传</em>
+        </div>
+        <div class="upload-hint">支持 JPG、PNG、GIF、WebP、BMP 格式</div>
+      </div>
+    </el-upload>
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmUpload">确认上传</el-button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">
@@ -349,14 +490,19 @@ onBeforeUnmount(() => {
 }
 
 .page {
-  height: calc(100vh - 80px);
+  height: calc(100vh - 52px - 12px - 12px);
   display: grid;
-  grid-template-columns: minmax(0, 0.4fr) minmax(0, 0.6fr);
+  grid-template-columns: minmax(0, 0.4fr) 6px minmax(0, 0.6fr);
   justify-content: center;
-  gap: 26px;
-  padding: 34px 40px;
-  overflow: hidden;
+  gap: 4px;
+  padding: 18px 24px 20px;
   background: transparent;
+  overflow: hidden;
+}
+
+.page.dragging {
+  user-select: none;
+  cursor: col-resize;
 }
 
 .panel {
@@ -372,6 +518,58 @@ onBeforeUnmount(() => {
     0 28px 70px rgb(148 163 184 / 18%),
     0 1px 0 rgb(255 255 255 / 88%) inset;
   backdrop-filter: blur(16px);
+}
+
+.editor-panel,
+.preview-panel {
+  height: 100%;
+}
+
+.splitter {
+  position: relative;
+  align-self: stretch;
+  width: 8px;
+  border-radius: 999px;
+  cursor: col-resize;
+  background: transparent;
+  transition:
+    background 0.18s ease,
+    transform 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .splitter-line {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: calc(100% - 28px);
+    max-height: calc(100% - 28px);
+    border-radius: 999px;
+    background: rgb(203 213 225 / 0%);
+    opacity: 0;
+    transition:
+      background 0.18s ease,
+      box-shadow 0.18s ease,
+      opacity 0.18s ease,
+      height 0.18s ease;
+  }
+
+  &:hover,
+  &.is-active {
+    background: rgb(219 234 254 / 14%);
+
+    .splitter-line {
+      width: 3px;
+      opacity: 1;
+      background: linear-gradient(180deg, #93c5fd 0%, #60a5fa 100%);
+      box-shadow:
+        0 0 0 4px rgb(255 255 255 / 72%),
+        0 0 0 6px rgb(191 219 254 / 16%);
+    }
+  }
 }
 
 .panel-title {
@@ -661,6 +859,16 @@ onBeforeUnmount(() => {
   @include hidden-scrollbar;
   @include mono-font;
 
+  &::selection {
+    background: rgb(191 219 254 / 42%);
+    color: #0f172a;
+  }
+
+  &::-moz-selection {
+    background: rgb(191 219 254 / 42%);
+    color: #0f172a;
+  }
+
   &:focus {
     outline: none;
   }
@@ -714,6 +922,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 14px;
   background:
     radial-gradient(circle at 50% 0%, rgb(219 234 254 / 36%), transparent 30%),
     linear-gradient(180deg, #eef3f9 0%, #e3e9f2 100%);
@@ -741,9 +950,9 @@ onBeforeUnmount(() => {
 }
 
 .paper-stage {
-  width: max(100%, calc(794px * v-bind(previewScale) + 96px));
-  min-height: max(100%, calc(1123px * v-bind(previewScale) + 96px));
-  padding: 48px;
+  width: max(100%, calc(794px * v-bind(previewScale) + 72px));
+  min-height: max(100%, calc(1123px * v-bind(previewScale) + 72px));
+  padding: 24px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -752,7 +961,7 @@ onBeforeUnmount(() => {
 .preview-paper {
   width: 794px;
   min-height: 1123px;
-  padding: 58px 64px;
+  padding: 42px 52px;
   flex-shrink: 0;
   border: 1px solid rgb(226 232 240 / 92%);
   border-radius: 4px;
@@ -846,5 +1055,198 @@ onBeforeUnmount(() => {
 
 .panel {
   min-height: 0;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 0;
+
+  .upload-icon {
+    font-size: 48px;
+    color: $blue-400;
+  }
+
+  .upload-text {
+    font-size: 15px;
+    color: $slate-600;
+
+    em {
+      color: $blue-500;
+      font-style: normal;
+      cursor: pointer;
+    }
+  }
+
+  .upload-hint {
+    font-size: 12px;
+    color: $slate-400;
+  }
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:deep(.el-dialog) {
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid rgb(226 232 240 / 92%);
+  box-shadow:
+    0 32px 80px rgb(15 23 42 / 22%),
+    0 1px 0 rgb(255 255 255 / 92%) inset;
+  backdrop-filter: blur(20px);
+}
+
+:deep(.el-dialog__header) {
+  margin: 0;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid rgb(226 232 240 / 90%);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f4f8fd 100%),
+    linear-gradient(90deg, rgb(219 234 254 / 30%) 0%, transparent 30%, transparent 70%, rgb(219 234 254 / 20%) 100%);
+}
+
+:deep(.el-dialog__title) {
+  font-size: 17px;
+  font-weight: 700;
+  color: $slate-800;
+  letter-spacing: 0.01em;
+}
+
+:deep(.el-dialog__headerbtn) {
+  top: 18px;
+  right: 20px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.18s ease;
+
+  &:hover {
+    background: rgb(241 245 249);
+  }
+
+  .el-dialog__close {
+    font-size: 16px;
+    color: $slate-400;
+    font-weight: 700;
+  }
+}
+
+:deep(.el-dialog__body) {
+  padding: 200px 24px 24px;
+}
+
+:deep(.el-dialog__footer) {
+  padding: 16px 24px 20px;
+  border-top: 1px solid rgb(226 232 240 / 88%);
+  background:
+    linear-gradient(180deg, rgb(248 251 255) 0%, rgb(255 255 255 / 92%) 100%);
+}
+
+:deep(.el-upload-dragger) {
+  border: 2px dashed rgb(203 213 225 / 80%);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgb(248 251 255) 0%, rgb(255 255 255) 100%);
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+
+  &:hover {
+    border-color: $blue-300;
+    background:
+      linear-gradient(180deg, rgb(239 246 255) 0%, rgb(255 255 255) 100%);
+    box-shadow: 0 0 0 6px rgb(59 130 246 / 6%);
+  }
+
+  .el-upload-dragger {
+    border: none;
+    background: transparent;
+  }
+}
+
+:deep(.el-button) {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+}
+
+:deep(.el-button--default) {
+  border: 1px solid rgb(203 213 225 / 86%);
+  background: linear-gradient(180deg, #ffffff 0%, $blue-50 100%);
+  color: $slate-600;
+  box-shadow: 0 1px 2px rgb(148 163 184 / 8%);
+
+  &:hover {
+    border-color: rgb(191 219 254 / 90%);
+    background: linear-gradient(180deg, #ffffff 0%, $blue-100 100%);
+    color: $slate-700;
+    box-shadow: 0 4px 10px rgb(148 163 184 / 12%);
+  }
+}
+
+:deep(.el-button--primary) {
+  border: 1px solid $blue-400;
+  background: linear-gradient(180deg, #60a5fa 0%, $blue-500 100%);
+  color: #fff;
+  box-shadow:
+    0 2px 6px rgb(59 130 246 / 24%),
+    0 1px 0 rgb(255 255 255 / 20%) inset;
+
+  &:hover {
+    border-color: $blue-500;
+    background: linear-gradient(180deg, #3b82f6 0%, $blue-600 100%);
+    box-shadow:
+      0 4px 14px rgb(59 130 246 / 34%),
+      0 1px 0 rgb(255 255 255 / 16%) inset;
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+@media (width <= 640px) {
+  :deep(.el-dialog) {
+    width: 92% !important;
+    border-radius: 16px;
+  }
+
+  :deep(.el-dialog__header) {
+    padding: 14px 16px 12px;
+  }
+
+  :deep(.el-dialog__body) {
+    padding: 14px 16px 16px;
+  }
+
+  :deep(.el-dialog__footer) {
+    padding: 12px 16px 16px;
+  }
+
+  :deep(.el-upload-dragger) {
+    border-radius: 12px;
+  }
 }
 </style>

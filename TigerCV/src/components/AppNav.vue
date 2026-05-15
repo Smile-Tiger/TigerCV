@@ -9,7 +9,7 @@ const navItems = [
   <header class="app-nav">
     <div class="nav-container app-nav-inner">
       <RouterLink class="nav-brand" to="/home" aria-label="TigerCV 首页">
-        <span class="brand-name">TigerCV</span>
+        <div class="eyebrow">TigerCV</div>
       </RouterLink>
 
       <nav class="nav-links" aria-label="主导航">
@@ -25,6 +25,11 @@ const navItems = [
 @use '@/assets/colors.scss' as *;
 
 .app-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
   height: 64px;
   border-bottom: 1px solid rgb(255 255 255 / 40%);
   background: rgba(255, 255, 255, 0.15);
@@ -35,6 +40,7 @@ const navItems = [
 
 .app-nav-inner {
   height: 100%;
+  justify-content: center;
   display: flex;
   align-items: center;
 }
@@ -42,15 +48,19 @@ const navItems = [
 .nav-brand {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
   color: $color-primary;
   text-decoration: none;
   flex-shrink: 0;
 }
 
-.brand-name {
+.eyebrow {
+  margin: 0;
+  color: #2563eb;
   font-size: 20px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   line-height: 1;
 }
 
