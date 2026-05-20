@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import markdownItAttrs from 'markdown-it-attrs'
+import { useResumeStore } from '@/stores/resume'
 
-const markdown = ref('')
+const resumeStore = useResumeStore()
+const markdown = ref(resumeStore.markdown)
+
+watch(markdown, (val) => {
+  resumeStore.setMarkdown(val)
+})
 
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const rulerRef = ref<HTMLDivElement | null>(null)
@@ -395,7 +401,7 @@ onBeforeUnmount(() => {
           <strong>B</strong>
         </button>
         <button class="tool-btn" type="button" title="斜体" @mousedown.prevent @click="wrapSelection('*')">
-          <em>I</em>
+          <em>/</em>
         </button>
         <button class="tool-btn" type="button" title="添加链接" @mousedown.prevent @click="toggleLink">
           <el-icon>
@@ -1227,7 +1233,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (width <= 640px) {
+@media (width <=640px) {
   :deep(.el-dialog) {
     width: 92% !important;
     border-radius: 16px;

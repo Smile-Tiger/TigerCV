@@ -1,4 +1,62 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useResumeStore } from '@/stores/resume'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
+
+const route = useRoute()
+const resumeStore = useResumeStore()
+
+const actionsVisible = ref(route.path === '/home/writeResume')
+
+watch(
+  () => route.path,
+  (path) => {
+    actionsVisible.value = path === '/home/writeResume'
+  },
+)
+
+const handleSave = () => {
+  resumeStore.saveToLocal()
+  ElMessage.success('已保存到本地')
+}
+
+const capturePaper = async () => {
+  const paper = document.querySelector('.preview-paper') as HTMLElement
+  if (!paper) {
+    ElMessage.error('未找到简历预览内容')
+    return null
+  }
+  return html2canvas(paper, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+  })
+}
+
+const handleExportMD = () => {
+  resumeStore.exportMarkdown()
+  ElMessage.success('Markdown 已导出')
+}
+
+const handleExportPDF = async () => {
+  const canvas = await capturePaper()
+  if (!canvas) return
+
+  const imgWidth = 210
+  const imgHeight = (canvas.height * imgWidth) / canvas.width
+  const pdf = new jsPDF('p', 'mm', 'a4')
+  pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, imgHeight, undefined, 'FAST')
+  pdf.save(`resume-${Date.now()}.pdf`)
+  ElMessage.success('PDF 已导出')
+}
+
+const exportItems = [
+  { label: 'PDF', handler: handleExportPDF },
+  { label: 'MD', handler: handleExportMD },
+] as const
+
 const navItems = [
   { label: '首页', to: '/home' },
   { label: '简历', to: '/home/writeResume' },
@@ -17,6 +75,34 @@ const navItems = [
           <span>{{ item.label }}</span>
         </RouterLink>
       </nav>
+
+      <div class="nav-actions" :class="{ 'is-visible': actionsVisible }">
+        <button class="action-btn action-btn--save" type="button" @click="handleSave">
+          <el-icon>
+            <EpCheck />
+          </el-icon>
+          <span>保存</span>
+        </button>
+
+        <el-dropdown trigger="hover" placement="bottom-end" popper-class="export-dropdown-popper">
+          <button class="action-btn action-btn--export" type="button">
+            <el-icon>
+              <EpDownload />
+            </el-icon>
+            <span>导出</span>
+            <el-icon class="arrow-icon">
+              <EpArrowDown />
+            </el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="item in exportItems" :key="item.label" @click="item.handler">
+                <span>{{ item.label }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </div>
   </header>
 </template>
@@ -72,6 +158,95 @@ const navItems = [
   margin-left: auto;
 }
 
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgb(226 232 240 / 60%);
+  max-width: 300px;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-width 0.3s ease,
+    opacity 0.25s ease,
+    margin-left 0.3s ease,
+    padding-left 0.3s ease;
+
+  &.is-visible {
+    max-width: 300px;
+    opacity: 1;
+    overflow: visible;
+  }
+}
+
+.action-btn {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgb(203 213 225 / 80%);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+
+  .el-icon {
+    font-size: 16px;
+  }
+}
+
+.arrow-icon {
+  font-size: 12px !important;
+  margin-left: -2px;
+  transition: transform 0.2s ease;
+
+  .action-btn--export:hover & {
+    transform: rotate(180deg);
+  }
+}
+
+.action-btn--save {
+  background: linear-gradient(180deg, #ffffff 0%, $blue-50 100%);
+  color: $slate-600;
+
+  &:hover {
+    border-color: rgb(191 219 254 / 90%);
+    background: linear-gradient(180deg, #ffffff 0%, $blue-100 100%);
+    color: $slate-700;
+    box-shadow: 0 4px 10px rgb(148 163 184 / 12%);
+  }
+}
+
+.action-btn--export {
+  background: linear-gradient(180deg, #60a5fa 0%, $blue-500 100%);
+  border-color: $blue-400;
+  color: #fff;
+  box-shadow:
+    0 2px 6px rgb(59 130 246 / 24%),
+    0 1px 0 rgb(255 255 255 / 20%) inset;
+
+  &:hover {
+    border-color: $blue-500;
+    background: linear-gradient(180deg, #3b82f6 0%, $blue-600 100%);
+    box-shadow:
+      0 4px 14px rgb(59 130 246 / 34%),
+      0 1px 0 rgb(255 255 255 / 16%) inset;
+  }
+}
+
 .nav-link {
   min-width: 60px;
   height: 36px;
@@ -103,18 +278,50 @@ const navItems = [
     transform: translateY(0);
   }
 }
+</style>
 
-@media (max-width: 980px) {
-  .nav-links {
-    gap: 8px;
-  }
-}
+<style lang="scss">
+@use '@/assets/colors.scss' as *;
 
-@media (max-width: 640px) {
-  .nav-link {
-    min-width: 52px;
-    padding: 0 10px;
+.export-dropdown-popper {
+  margin-top: 6px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgb(226 232 240 / 92%) !important;
+  background: rgb(255 255 255 / 96%) !important;
+  box-shadow:
+    0 12px 40px rgb(15 23 42 / 14%),
+    0 1px 0 rgb(255 255 255 / 88%) inset !important;
+  backdrop-filter: blur(16px);
+  padding: 4px !important;
+
+  .el-dropdown-menu__item {
+    padding: 0 12px;
+    height: 36px;
+    border-radius: 8px;
+    color: $slate-600;
     font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+
+    .el-icon {
+      font-size: 16px;
+      color: $slate-400;
+      transition: color 0.15s ease;
+    }
+
+    &:hover {
+      background: $blue-50;
+      color: $blue-600;
+
+      .el-icon {
+        color: $blue-500;
+      }
+    }
   }
 }
 </style>
