@@ -15,6 +15,10 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.4",
     "@tsparticles/vue3": "^3.0.1",
     "element-plus": "^2.13.7",
     "html2canvas": "^1.4.1",

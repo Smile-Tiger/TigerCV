@@ -9,6 +9,11 @@ const pointerX = ref(0)
 const pointerY = ref(0)
 const isHoveringHero = ref(false)
 const isLoaded = ref(false)
+const typedFeatureText = ref('')
+const activeFeatureIndex = ref(0)
+const isDeletingFeatureText = ref(false)
+
+const currentYear = new Date().getFullYear()
 
 const metrics = [
   { label: '模板风格', value: '3+' },
@@ -19,8 +24,60 @@ const metrics = [
 const highlights = [
   'Markdown 轻量编辑',
   'A4 简历预览',
-  '白灰蓝简约视觉',
+  '蓝灰极简视觉',
 ] as const
+
+const whyFeatureMessages = [
+  'AI 简历编辑：把经历整理、亮点润色和结构重组压缩进同一条工作流。',
+  'Markdown 轻量编辑：专注内容输入本身，同时保持所见即所得的实时预览。',
+  '简历优化：围绕岗位关键词、表达密度和项目成果，给出更可执行的改写建议。',
+  '简历评分：从完整度、匹配度和说服力三个维度，快速判断当前版本质量。',
+] as const
+
+const whyFeatureDetails = [
+  {
+    index: '01',
+    title: 'AI 简历编辑',
+    body: '帮助你快速整理经历、提炼亮点，并把零散内容改写成更专业的简历表达。',
+  },
+  {
+    index: '02',
+    title: 'Markdown 轻量编辑',
+    body: '保留纯文本写作的流畅感，让排版、预览和输出保持同步，不被复杂工具打断。',
+  },
+  {
+    index: '03',
+    title: '简历优化',
+    body: '针对岗位目标调整措辞、结构和成果呈现，让内容更聚焦、更有招聘语境。',
+  },
+  {
+    index: '04',
+    title: '简历评分',
+    body: '快速判断版本完成度与竞争力，找到还能继续打磨的重点区域。',
+  },
+] as const
+
+const footerNavLinks = [
+  { label: '首页', href: '/home' },
+  { label: '简历编辑', href: '/home/writeResume' },
+  { label: '功能亮点', href: '#why-choose-tigercv' },
+  { label: '示例预览', href: '#home-showcase' },
+] as const
+
+const footerFeatureLinks = [
+  { label: 'AI 简历编辑' },
+  { label: 'Markdown 轻量编辑' },
+  { label: '简历优化建议' },
+  { label: '简历评分反馈' },
+] as const
+
+const footerContacts = [
+  { label: 'GitHub', value: 'github.com/tigercv', href: 'https://github.com/tigercv' },
+  { label: '联系邮箱', value: 'hello@tigercv.app', href: 'mailto:hello@tigercv.app' },
+  { label: '商务合作', value: '+86 400-000-0000', href: 'tel:+864000000000' },
+] as const
+
+let typingTimer: ReturnType<typeof window.setTimeout> | null = null
 
 const updatePointer = (event: PointerEvent) => {
   const el = heroRef.value
@@ -54,6 +111,42 @@ const backgroundStyle = computed(() => ({
   '--pointer-y': `${pointerY.value}%`,
 }))
 
+const queueTypewriterTick = (delay: number) => {
+  if (typingTimer) {
+    window.clearTimeout(typingTimer)
+  }
+
+  typingTimer = window.setTimeout(runTypewriterTick, delay)
+}
+
+const runTypewriterTick = () => {
+  const currentMessage = whyFeatureMessages[activeFeatureIndex.value] ?? ''
+
+  if (!isDeletingFeatureText.value) {
+    typedFeatureText.value = currentMessage.slice(0, typedFeatureText.value.length + 1)
+
+    if (typedFeatureText.value === currentMessage) {
+      isDeletingFeatureText.value = true
+      queueTypewriterTick(1600)
+      return
+    }
+
+    queueTypewriterTick(68)
+    return
+  }
+
+  typedFeatureText.value = currentMessage.slice(0, Math.max(typedFeatureText.value.length - 1, 0))
+
+  if (typedFeatureText.value.length === 0) {
+    isDeletingFeatureText.value = false
+    activeFeatureIndex.value = (activeFeatureIndex.value + 1) % whyFeatureMessages.length
+    queueTypewriterTick(240)
+    return
+  }
+
+  queueTypewriterTick(34)
+}
+
 const onScroll = () => {
   const el = heroRef.value
   if (!el) return
@@ -61,14 +154,19 @@ const onScroll = () => {
 }
 
 onMounted(() => {
+  onScroll()
   window.addEventListener('scroll', onScroll, { passive: true })
   requestAnimationFrame(() => {
     isLoaded.value = true
   })
+  queueTypewriterTick(420)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
+  if (typingTimer) {
+    window.clearTimeout(typingTimer)
+  }
 })
 </script>
 
@@ -89,7 +187,7 @@ onBeforeUnmount(() => {
             <p class="eyebrow">TigerCV</p>
             <h1>让简历编辑更轻、更快、更专业</h1>
             <p class="description">
-              以 Markdown 驱动的简历编辑体验，实时预览、清爽布局、专业排版，让你的内容更聚焦在表达本身。
+              以 Markdown 驱动的简历编辑体验，融合实时预览、清爽布局与专业排版，让内容表达本身更清晰。
             </p>
           </div>
         </div>
@@ -118,7 +216,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <aside class="showcase-panel reveal-block delay-5" aria-label="简历示例展示">
+      <aside id="home-showcase" class="showcase-panel reveal-block delay-5" aria-label="简历示例展示">
         <div class="showcase-header">
           <span class="showcase-dot dot-red"></span>
           <span class="showcase-dot dot-yellow"></span>
@@ -145,17 +243,91 @@ onBeforeUnmount(() => {
             <div class="paper-section paper-columns">
               <div>
                 <h3>技能亮点</h3>
-                <p>Markdown · 组件化 · 预览联动</p>
+                <p>Markdown / 组件化 / 预览联动</p>
               </div>
               <div>
                 <h3>工作方式</h3>
-                <p>简洁 · 清晰 · 专业 · 高效</p>
+                <p>简洁 / 清晰 / 专业 / 高效</p>
               </div>
             </div>
           </div>
         </div>
       </aside>
     </section>
+
+    <section class="why-shell" aria-labelledby="why-choose-tigercv">
+      <div class="why-heading">
+        <p class="section-eyebrow">Why TigerCV</p>
+        <h2 id="why-choose-tigercv" class="why-title">为什么选择 TigerCV</h2>
+        <p class="why-description">
+          TigerCV 把写作、优化、评估和导出串成一条连续工作流，让每一次简历迭代都更轻、更准、更有方向。
+        </p>
+      </div>
+
+      <div class="typewriter-stage" aria-live="polite">
+        <span class="typewriter-label">核心功能持续展示中</span>
+        <p class="typewriter-line">
+          <span class="typewriter-copy">
+            <span class="typewriter-text">{{ typedFeatureText }}</span>
+            <span class="typewriter-caret" aria-hidden="true"></span>
+          </span>
+        </p>
+      </div>
+
+      <div class="why-feature-grid">
+        <article v-for="item in whyFeatureDetails" :key="item.index" class="why-feature">
+          <span class="why-feature-index">{{ item.index }}</span>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.body }}</p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="footer-shell">
+        <section class="footer-brand">
+          <p class="footer-mark">TigerCV</p>
+          <h2>把简历写作、优化与输出整理成更顺手的一条线。</h2>
+          <p class="footer-copy">
+            保留清晰、轻量、好维护的页脚结构，你可以直接把这里替换成个人站点或企业官网的真实信息。
+          </p>
+        </section>
+
+        <nav class="footer-column" aria-label="页脚导航">
+          <p class="footer-heading">导航</p>
+          <ul class="footer-menu-list">
+            <li v-for="item in footerNavLinks" :key="item.label">
+              <a :href="item.href" class="footer-menu-link">{{ item.label }}</a>
+            </li>
+          </ul>
+        </nav>
+
+        <section class="footer-column" aria-label="功能概览">
+          <p class="footer-heading">功能</p>
+          <ul class="footer-menu-list">
+            <li v-for="item in footerFeatureLinks" :key="item.label">
+              <span class="footer-menu-text">{{ item.label }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="footer-contact" aria-label="联系方式">
+          <p class="footer-heading">联系方式</p>
+          <ul class="footer-contact-list">
+            <li v-for="item in footerContacts" :key="item.label" class="footer-contact-item">
+              <span class="footer-contact-label">{{ item.label }}</span>
+              <a :href="item.href" class="footer-contact-value" target="_blank" rel="noreferrer">
+                {{ item.value }}
+              </a>
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="footer-bottom">
+        <span>© {{ currentYear }} TigerCV. All rights reserved.</span>
+      </div>
+    </footer>
   </main>
 </template>
 
@@ -166,7 +338,10 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   min-height: calc(100vh - 80px);
-  padding: 24px 0 36px;
+  padding: 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
   overflow-y: auto;
   overflow-x: hidden;
   background: transparent;
@@ -213,29 +388,6 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.hero-glow {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(18px);
-  opacity: 0.9;
-}
-
-.hero-glow-left {
-  top: -60px;
-  left: -80px;
-  width: 240px;
-  height: 240px;
-
-}
-
-.hero-glow-right {
-  right: -80px;
-  bottom: -70px;
-  width: 260px;
-  height: 260px;
-}
-
 .hero-content {
   position: relative;
   z-index: 1;
@@ -256,7 +408,7 @@ onBeforeUnmount(() => {
 .delay-2 { animation-delay: 0.16s; }
 .delay-3 { animation-delay: 0.24s; }
 .delay-4 { animation-delay: 0.32s; }
-.delay-5 { animation-delay: 0.40s; }
+.delay-5 { animation-delay: 0.4s; }
 
 .brand-block {
   display: flex;
@@ -268,8 +420,10 @@ onBeforeUnmount(() => {
   max-width: 620px;
 }
 
-.eyebrow {
-  margin: 0 0 10px;
+.eyebrow,
+.section-eyebrow,
+.footer-mark {
+  margin: 0;
   color: #2563eb;
   font-size: 13px;
   font-weight: 800;
@@ -485,7 +639,7 @@ h1 {
   -webkit-backdrop-filter: blur(16px);
 }
 
-.showcase-header+.showcase-card {
+.showcase-header + .showcase-card {
   margin-top: -1px;
 }
 
@@ -544,9 +698,248 @@ h1 {
   gap: 18px;
 }
 
-.hero-shell:hover .brand-mark {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 22px 44px rgb(37 99 235 / 26%);
+.why-shell {
+  position: relative;
+  width: min(1280px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 24px 40px 0;
+  display: grid;
+  gap: 34px;
+}
+
+.why-shell::before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(148 163 184 / 55%), transparent);
+}
+
+.why-shell::after {
+  content: '';
+  position: absolute;
+  right: 2%;
+  top: 14px;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(96 165 250 / 20%) 0%, transparent 68%);
+  filter: blur(52px);
+  pointer-events: none;
+}
+
+.why-heading,
+.typewriter-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.why-heading {
+  max-width: 760px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+  text-align: center;
+}
+
+.why-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.why-description {
+  margin: 0;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1.85;
+}
+
+.typewriter-stage {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+
+.typewriter-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.typewriter-line {
+  width: 100%;
+  height: clamp(148px, 16vw, 184px);
+  margin: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  text-align: center;
+}
+
+.typewriter-copy {
+  max-width: min(760px, 100%);
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+
+.typewriter-text {
+  display: block;
+  color: transparent;
+  font-size: clamp(25px, 3.6vw, 42px);
+  line-height: 1.42;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+  background: linear-gradient(180deg, #0f172a 0%, #2563eb 135%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.typewriter-caret {
+  width: 3px;
+  height: 1.08em;
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #93c5fd 0%, #2563eb 100%);
+  box-shadow: 0 0 0 6px rgb(191 219 254 / 18%);
+  animation: caret-blink 0.95s steps(1) infinite;
+}
+
+.why-feature-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.why-feature {
+  padding-top: 18px;
+  border-top: 1px solid rgb(191 219 254 / 72%);
+}
+
+.why-feature-index {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: #60a5fa;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.why-feature h3 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.why-feature p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.site-footer {
+  padding: 34px 0 20px;
+  border-top: 1px solid rgb(226 232 240 / 88%);
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.footer-shell,
+.footer-bottom {
+  width: min(1280px, calc(100vw - 40px));
+  margin: 0 auto;
+}
+
+.footer-shell {
+  padding-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) repeat(3, minmax(0, 0.8fr));
+  gap: 28px;
+}
+
+.footer-brand h2 {
+  margin: 12px 0 10px;
+  color: #0f172a;
+  font-size: clamp(22px, 2.6vw, 28px);
+  line-height: 1.22;
+  letter-spacing: -0.03em;
+}
+
+.footer-copy {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.footer-heading {
+  margin: 0 0 16px;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.footer-column,
+.footer-contact {
+  min-width: 0;
+}
+
+.footer-menu-list,
+.footer-contact-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.footer-menu-link,
+.footer-menu-text,
+.footer-contact-value {
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.75;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.footer-menu-link:hover,
+.footer-contact-value:hover {
+  color: #2563eb;
+}
+
+.footer-contact-item {
+  display: grid;
+  gap: 4px;
+}
+
+.footer-contact-label {
+  color: #94a3b8;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer-bottom {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid rgb(203 213 225 / 72%);
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .hero-shell:hover .metric-card {
@@ -561,20 +954,45 @@ h1 {
   }
 
   .showcase-panel {
-    max-width: 760px;
+    width: min(100%, 760px);
+    justify-self: center;
+  }
+
+  .why-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-shell {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 768px) {
   .home-page {
-    padding: 16px 0 24px;
+    padding: 16px 0 0;
+    gap: 40px;
+  }
+
+  .hero-shell,
+  .why-shell,
+  .footer-shell,
+  .footer-bottom {
+    width: calc(100vw - 24px);
   }
 
   .hero-shell {
-    width: calc(100vw - 24px);
     padding: 22px;
     border-radius: 24px;
     min-height: auto;
+  }
+
+  .why-shell {
+    padding: 20px 0 0;
+    gap: 28px;
   }
 
   .brand-block {
@@ -582,13 +1000,19 @@ h1 {
   }
 
   .metrics-grid,
-  .paper-columns {
+  .paper-columns,
+  .why-feature-grid,
+  .footer-shell {
     grid-template-columns: 1fr;
   }
 
   .sample-paper {
     min-height: auto;
     padding: 22px;
+  }
+
+  .typewriter-line {
+    height: 176px;
   }
 }
 
@@ -597,7 +1021,8 @@ h1 {
     font-size: 30px;
   }
 
-  .description {
+  .description,
+  .why-description {
     font-size: 14px;
   }
 
@@ -608,6 +1033,28 @@ h1 {
   .primary-btn,
   .secondary-btn {
     width: 100%;
+  }
+
+  .typewriter-line {
+    height: 210px;
+  }
+
+  .typewriter-copy {
+    gap: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-shell.is-loaded,
+  .reveal-block {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  .typewriter-caret {
+    animation: none;
   }
 }
 
@@ -634,6 +1081,18 @@ h1 {
     opacity: 1;
     transform: translateY(0);
     filter: blur(0);
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
   }
 }
 </style>

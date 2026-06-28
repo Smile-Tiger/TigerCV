@@ -1,20 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { EditorSelection, EditorState } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { markdown as markdownLanguage } from '@codemirror/lang-markdown'
+import {
+  EditorView,
+  drawSelection,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+  placeholder,
+} from '@codemirror/view'
+import { ElMessage } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import markdownItAttrs from 'markdown-it-attrs'
 import { useResumeStore } from '@/stores/resume'
 
 const resumeStore = useResumeStore()
 const markdown = ref(resumeStore.markdown)
-
-watch(markdown, (val) => {
-  resumeStore.setMarkdown(val)
-})
-
-const editorRef = ref<HTMLTextAreaElement | null>(null)
-const rulerRef = ref<HTMLDivElement | null>(null)
-const activeLine = ref(1)
-const visualLineCount = ref(1)
+const editorRootRef = ref<HTMLDivElement | null>(null)
+const editorViewRef = ref<EditorView | null>(null)
 const previewScale = ref(0.9)
 const splitRatio = ref(0.4)
 const pageRef = ref<HTMLElement | null>(null)
@@ -30,11 +36,29 @@ const uploadFiles = ref<any[]>([])
 
 const imageStore = new Map<string, { file: File; objectUrl: string }>()
 
+watch(markdown, (val) => {
+  resumeStore.setMarkdown(val)
+
+  const view = editorViewRef.value
+  if (!view) return
+
+  const currentDoc = view.state.doc.toString()
+  if (currentDoc === val) return
+
+  const selection = view.state.selection.main
+  view.dispatch({
+    changes: { from: 0, to: currentDoc.length, insert: val },
+    selection: EditorSelection.range(
+      Math.min(selection.anchor, val.length),
+      Math.min(selection.head, val.length),
+    ),
+  })
+})
+
 const previewScalePercent = computed(() => `${Math.round(previewScale.value * 100)}%`)
 const previewPaperStyle = computed(() => ({
   transform: `scale(${previewScale.value})`,
 }))
-
 const gridTemplateColumns = computed(() => `${splitRatio.value}fr 10px ${1 - splitRatio.value}fr`)
 
 const parser = new MarkdownIt({
@@ -50,35 +74,6 @@ parser.use(markdownItAttrs, {
 })
 
 const previewHtml = computed(() => parser.render(markdown.value))
-const lineNumbers = computed(() => {
-  return Array.from({ length: visualLineCount.value }, (_, index) => index + 1)
-})
-
-const lineBoxHeight = computed(() => '20px')
-
-const calculateVisualLineCount = (text: string) => {
-  const textarea = editorRef.value
-  if (!textarea) return Math.max(1, text.split('\n').length)
-
-  const style = window.getComputedStyle(textarea)
-  const font = `${style.fontStyle} ${style.fontVariant} ${style.fontWeight} ${style.fontSize} / ${style.lineHeight} ${style.fontFamily}`
-  const availableWidth = textarea.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight)
-
-  if (availableWidth <= 0) return Math.max(1, text.split('\n').length)
-
-  return text.split('\n').reduce((total, line) => {
-    const visualCount = Math.max(1, Math.ceil(measureTextWidth(line || ' ', font) / availableWidth))
-    return total + visualCount
-  }, 0)
-}
-
-const updateActiveLine = () => {
-  const textarea = editorRef.value
-  if (!textarea) return
-
-  const cursor = textarea.selectionStart ?? 0
-  activeLine.value = calculateVisualLineCount(markdown.value.slice(0, cursor)) || 1
-}
 
 const clampPreviewScale = (value: number) =>
   Math.min(MAX_PREVIEW_SCALE, Math.max(MIN_PREVIEW_SCALE, Number(value.toFixed(2))))
@@ -108,6 +103,7 @@ const updateSplitRatio = (clientX: number) => {
 
 const stopDragging = () => {
   if (!isDraggingSplit.value) return
+
   isDraggingSplit.value = false
   document.body.style.userSelect = ''
   document.body.style.cursor = ''
@@ -130,143 +126,83 @@ const startDraggingSplit = (event: PointerEvent) => {
 }
 
 const getSelection = () => {
-  const textarea = editorRef.value
-  if (!textarea) return { textarea: null, start: 0, end: 0 }
+  const view = editorViewRef.value
+  if (!view) return { view: null, start: 0, end: 0 }
 
+  const selection = view.state.selection.main
   return {
-    textarea,
-    start: textarea.selectionStart ?? markdown.value.length,
-    end: textarea.selectionEnd ?? markdown.value.length,
+    view,
+    start: selection.from,
+    end: selection.to,
   }
 }
 
-const replaceSelection = (before: string, after = '', placeholder = '') => {
-  const { textarea, start, end } = getSelection()
-  if (!textarea) return
+const applyEditorChange = (
+  from: number,
+  to: number,
+  insert: string,
+  selection: { anchor: number; head?: number },
+) => {
+  const view = editorViewRef.value
+  if (!view) return
 
-  const selectedText = markdown.value.slice(start, end)
-  const insertContent = selectedText ? `${before}${selectedText}${after}` : `${before}${placeholder}${after}`
-
-  markdown.value = `${markdown.value.slice(0, start)}${insertContent}${markdown.value.slice(end)}`
-
-  nextTick(() => {
-    textarea.focus()
-    if (selectedText) {
-      textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length)
-      updateActiveLine()
-      return
-    }
-
-    const cursorPos = start + before.length + placeholder.length
-    textarea.setSelectionRange(cursorPos, cursorPos)
-    updateActiveLine()
+  view.dispatch({
+    changes: { from, to, insert },
+    selection:
+      selection.head === undefined || selection.head === selection.anchor
+        ? EditorSelection.cursor(selection.anchor)
+        : EditorSelection.range(selection.anchor, selection.head),
+    scrollIntoView: true,
   })
+
+  view.focus()
+}
+
+const replaceSelection = (before: string, after = '', placeholderText = '') => {
+  const { view, start, end } = getSelection()
+  if (!view) return
+
+  const selectedText = view.state.sliceDoc(start, end)
+  const insertContent = selectedText
+    ? `${before}${selectedText}${after}`
+    : `${before}${placeholderText}${after}`
+
+  const anchor = start + before.length
+  const head = selectedText ? anchor + selectedText.length : anchor + placeholderText.length
+  applyEditorChange(start, end, insertContent, { anchor, head })
 }
 
 const toggleDelimitedText = (marker: string) => {
-  const { textarea, start, end } = getSelection()
-  if (!textarea) return
+  const { view, start, end } = getSelection()
+  if (!view) return
 
-  const selectedText = markdown.value.slice(start, end)
-  const hasSelection = start !== end
-
-  if (hasSelection) {
-    const wrappedText = `${marker}${selectedText}${marker}`
-    const unwrappedText = selectedText.startsWith(marker) && selectedText.endsWith(marker)
+  const selectedText = view.state.sliceDoc(start, end)
+  if (start !== end) {
+    const isWrapped = selectedText.startsWith(marker) && selectedText.endsWith(marker)
+    const nextText = isWrapped
       ? selectedText.slice(marker.length, -marker.length)
-      : wrappedText
+      : `${marker}${selectedText}${marker}`
 
-    markdown.value = `${markdown.value.slice(0, start)}${unwrappedText}${markdown.value.slice(end)}`
-
-    nextTick(() => {
-      textarea.focus()
-      const nextStart = selectedText.startsWith(marker) && selectedText.endsWith(marker)
-        ? start
-        : start + marker.length
-      const nextEnd = selectedText.startsWith(marker) && selectedText.endsWith(marker)
-        ? start + unwrappedText.length
-        : start + marker.length + selectedText.length
-      textarea.setSelectionRange(nextStart, nextEnd)
-      updateActiveLine()
-    })
+    const nextStart = isWrapped ? start : start + marker.length
+    const nextEnd = isWrapped ? start + nextText.length : start + marker.length + selectedText.length
+    applyEditorChange(start, end, nextText, { anchor: nextStart, head: nextEnd })
     return
   }
 
-  const left = markdown.value.slice(0, start)
-  const right = markdown.value.slice(end)
-  const beforeText = markdown.value.slice(Math.max(0, start - marker.length), start)
-  const afterText = markdown.value.slice(start, start + marker.length)
+  const current = view.state.doc.toString()
+  const beforeText = current.slice(Math.max(0, start - marker.length), start)
+  const afterText = current.slice(start, start + marker.length)
 
   if (beforeText === marker && afterText === marker) {
-    markdown.value = `${left.slice(0, -marker.length)}${right.slice(marker.length)}`
-
-    nextTick(() => {
-      textarea.focus()
-      const cursorPos = start - marker.length
-      textarea.setSelectionRange(cursorPos, cursorPos)
-      updateActiveLine()
+    applyEditorChange(start - marker.length, start + marker.length, '', {
+      anchor: start - marker.length,
     })
     return
   }
 
-  markdown.value = `${left}${marker}${marker}${right}`
-
-  nextTick(() => {
-    textarea.focus()
-    const cursorPos = start + marker.length
-    textarea.setSelectionRange(cursorPos, cursorPos)
-    updateActiveLine()
+  applyEditorChange(start, end, `${marker}${marker}`, {
+    anchor: start + marker.length,
   })
-}
-
-const editorStyle = computed(() => ({
-  lineHeight: lineBoxHeight.value,
-}))
-
-const lineStyle = computed(() => ({
-  height: lineBoxHeight.value,
-}))
-
-const measureTextWidth = (() => {
-  let canvas: HTMLCanvasElement | null = null
-
-  return (text: string, font: string) => {
-    canvas ??= document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    if (!context) return 0
-
-    context.font = font
-    return context.measureText(text || ' ').width
-  }
-})()
-
-const updateVisualLines = () => {
-  const textarea = editorRef.value
-  if (!textarea) return
-
-  const style = window.getComputedStyle(textarea)
-  const font = `${style.fontStyle} ${style.fontVariant} ${style.fontWeight} ${style.fontSize} / ${style.lineHeight} ${style.fontFamily}`
-  const availableWidth = textarea.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight)
-
-  if (availableWidth <= 0) {
-    visualLineCount.value = Math.max(1, markdown.value.split('\n').length)
-    return
-  }
-
-  visualLineCount.value = markdown.value.split('\n').reduce((total, line) => {
-    const visualCount = Math.max(1, Math.ceil(measureTextWidth(line || ' ', font) / availableWidth))
-    return total + visualCount
-  }, 0)
-}
-
-const handleEditorScroll = () => {
-  const textarea = editorRef.value
-  const ruler = rulerRef.value
-  if (textarea && ruler) {
-    ruler.scrollTop = textarea.scrollTop
-  }
-
-  updateActiveLine()
 }
 
 const wrapSelection = (prefix: string, suffix = prefix) => {
@@ -279,11 +215,11 @@ const wrapSelection = (prefix: string, suffix = prefix) => {
 }
 
 const toggleLink = () => {
-  const { textarea, start, end } = getSelection()
-  if (!textarea) return
+  const { view, start, end } = getSelection()
+  if (!view) return
 
-  const insertText = `[链接文本](https://)`
-  const current = markdown.value
+  const insertText = `[Link](https://)`
+  const current = view.state.doc.toString()
   const linkPattern = /\[[^\]]*\]\(https:\/\/\)/g
   let insertPos = end
 
@@ -296,34 +232,10 @@ const toggleLink = () => {
     }
   }
 
-  markdown.value = `${current.slice(0, insertPos)}${insertText}${current.slice(insertPos)}`
-
-  nextTick(() => {
-    textarea.focus()
-    const linkStart = insertPos + 1
-    const linkEnd = linkStart + 4
-    textarea.setSelectionRange(linkStart, linkEnd)
-    updateActiveLine()
+  applyEditorChange(insertPos, insertPos, insertText, {
+    anchor: insertPos + 1,
+    head: insertPos + 5,
   })
-}
-
-const refreshEditorLines = () => {
-  nextTick(() => {
-    updateVisualLines()
-    updateActiveLine()
-  })
-}
-
-const handleEditorInput = () => {
-  refreshEditorLines()
-}
-
-const handleEditorClick = () => {
-  updateActiveLine()
-}
-
-const handleEditorKeyup = () => {
-  refreshEditorLines()
 }
 
 const openUploadDialog = () => {
@@ -357,36 +269,68 @@ const confirmUpload = () => {
   imageStore.set(objectUrl, { file, objectUrl })
 
   const fileName = file.name || 'image'
-  const { textarea, start } = getSelection()
+  const { view, start } = getSelection()
+  if (!view) return
+
   const mdImage = `![${fileName}](${objectUrl}){width=300 height=400}`
-
-  markdown.value =
-    markdown.value.slice(0, start) + mdImage + '\n' + markdown.value.slice(start)
-
-  nextTick(() => {
-    textarea?.focus()
-    const cursorPos = start + mdImage.length + 1
-    textarea?.setSelectionRange(cursorPos, cursorPos)
-    refreshEditorLines()
+  applyEditorChange(start, start, `${mdImage}\n`, {
+    anchor: start + mdImage.length + 1,
   })
 
   ElMessage.success('图片已插入')
   uploadDialogVisible.value = false
 }
 
+const createEditor = () => {
+  const mount = editorRootRef.value
+  if (!mount) return
+
+  editorViewRef.value = new EditorView({
+    parent: mount,
+    state: EditorState.create({
+      doc: markdown.value,
+      extensions: [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        history(),
+        drawSelection(),
+        EditorView.lineWrapping,
+        EditorView.contentAttributes.of({
+          spellcheck: 'false',
+          'aria-label': 'Markdown editor',
+        }),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        markdownLanguage(),
+        highlightActiveLine(),
+        placeholder('开始编辑你的简历吧！'),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            const nextDoc = update.state.doc.toString()
+            if (markdown.value !== nextDoc) {
+              markdown.value = nextDoc
+            }
+          }
+
+        }),
+      ],
+    }),
+  })
+}
+
 onMounted(() => {
-  refreshEditorLines()
-  window.addEventListener('resize', refreshEditorLines)
+  createEditor()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', refreshEditorLines)
+  stopDragging()
+  editorViewRef.value?.destroy()
+  editorViewRef.value = null
+
   for (const { objectUrl } of imageStore.values()) {
     URL.revokeObjectURL(objectUrl)
   }
   imageStore.clear()
 })
-
 </script>
 
 <template>
@@ -397,35 +341,27 @@ onBeforeUnmount(() => {
         <span class="dot dot-yellow"></span>
         <span class="dot dot-green"></span>
         <span class="editor-tip"><strong>MD</strong></span>
-        <button class="tool-btn" type="button" title="加粗" @mousedown.prevent @click="wrapSelection('**')">
+        <button class="tool-btn" type="button" title="Bold" @mousedown.prevent @click="wrapSelection('**')">
           <strong>B</strong>
         </button>
-        <button class="tool-btn" type="button" title="斜体" @mousedown.prevent @click="wrapSelection('*')">
+        <button class="tool-btn" type="button" title="Italic" @mousedown.prevent @click="wrapSelection('*')">
           <em>/</em>
         </button>
-        <button class="tool-btn" type="button" title="添加链接" @mousedown.prevent @click="toggleLink">
+        <button class="tool-btn" type="button" title="Insert Link" @mousedown.prevent @click="toggleLink">
           <el-icon>
             <EpPaperclip />
           </el-icon>
         </button>
-        <button class="tool-btn" type="button" title="添加图片" @mousedown.prevent @click="openUploadDialog">
+        <button class="tool-btn" type="button" title="Insert Image" @mousedown.prevent @click="openUploadDialog">
           <el-icon>
             <EpPicture />
           </el-icon>
         </button>
       </div>
-      <div class="editor-shell">
-        <div ref="rulerRef" class="editor-ruler" aria-hidden="true">
-          <span v-for="n in lineNumbers" :key="n" :class="{ 'is-active': n === activeLine }" :style="lineStyle">
-            {{ n }}
-          </span>
-        </div>
 
+      <div class="editor-shell">
         <div class="editor-canvas">
-          <textarea ref="editorRef" v-model="markdown" class="editor" :style="editorStyle" spellcheck="false"
-            placeholder="请输入 Markdown 内容" @input="handleEditorInput" @click="handleEditorClick"
-            @keyup="handleEditorKeyup" @keyup.arrow-down="handleEditorKeyup" @keyup.arrow-up="handleEditorKeyup"
-            @keyup.enter="handleEditorKeyup" @scroll="handleEditorScroll" />
+          <div ref="editorRootRef" class="editor"></div>
         </div>
       </div>
     </section>
@@ -452,8 +388,15 @@ onBeforeUnmount(() => {
   </main>
 
   <el-dialog v-model="uploadDialogVisible" title="上传图片" width="520px" :close-on-click-modal="false" destroy-on-close>
-    <el-upload v-model:file-list="uploadFiles" drag :auto-upload="false" :limit="1" :on-exceed="handleUploadExceed"
-      :accept="'.jpg,.jpeg,.png,.gif,.webp,.bmp'" list-type="picture">
+    <el-upload
+      v-model:file-list="uploadFiles"
+      drag
+      :auto-upload="false"
+      :limit="1"
+      :on-exceed="handleUploadExceed"
+      :accept="'.jpg,.jpeg,.png,.gif,.webp,.bmp'"
+      list-type="picture"
+    >
       <div class="upload-placeholder">
         <el-icon class="upload-icon">
           <EpUploadFilled />
@@ -496,6 +439,7 @@ onBeforeUnmount(() => {
 }
 
 .page {
+  min-width: 1180px;
   height: calc(100vh - 52px - 12px - 12px);
   display: grid;
   grid-template-columns: minmax(0, 0.4fr) 6px minmax(0, 0.6fr);
@@ -685,8 +629,6 @@ onBeforeUnmount(() => {
   position: relative;
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 56px 1fr;
   overflow: hidden;
   background: linear-gradient(180deg, $blue-50 0%, #eef3f9 100%);
 
@@ -697,142 +639,17 @@ onBeforeUnmount(() => {
     pointer-events: none;
     box-shadow: 0 0 0 1px rgb(255 255 255 / 60%) inset;
   }
-
-  .editor-ruler {
-    position: relative;
-    padding: 17px 10px 17px 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
-    overflow: hidden;
-    border-right: 1px solid rgb(203 213 225 / 70%);
-    background: linear-gradient(180deg, $blue-50 0%, #eef3f9 100%);
-    color: $slate-400;
-    font-size: 13px;
-    line-height: 1.8;
-    user-select: none;
-    box-shadow: inset -1px 0 0 rgb(255 255 255 / 70%);
-    @include mono-font;
-
-    span {
-      height: 27px;
-      display: flex;
-      align-items: center;
-
-      &.is-active {
-        position: relative;
-        color: $blue-600;
-        font-weight: 700;
-
-        &::before {
-          content: '';
-          position: absolute;
-          inset: -4px -8px;
-          border: 1px solid rgb(147 197 253 / 65%);
-          border-radius: 8px;
-          background: rgb(219 234 254 / 30%);
-          pointer-events: none;
-          z-index: -1;
-        }
-      }
-    }
-  }
-}
-
-.editor-ruler {
-  position: relative;
-  padding: 17px 10px 17px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  border-right: 1px solid rgb(203 213 225 / 70%);
-  background: linear-gradient(180deg, $blue-50 0%, #eef3f9 100%);
-  color: $slate-400;
-  font-size: 13px;
-  line-height: 1.8;
-  user-select: none;
-  box-shadow: inset -1px 0 0 rgb(255 255 255 / 70%);
-  @include hidden-scrollbar;
-  @include mono-font;
-
-  span {
-    height: 27px;
-    display: flex;
-    align-items: center;
-
-    &.is-active {
-      position: relative;
-      color: $blue-600;
-      font-weight: 700;
-
-      &::before {
-        content: '';
-        position: absolute;
-        inset: -4px -8px;
-        border: 1px solid rgb(147 197 253 / 65%);
-        border-radius: 8px;
-        background: rgb(219 234 254 / 30%);
-        pointer-events: none;
-        z-index: -1;
-      }
-    }
-  }
-}
-
-.editor-ruler {
-  position: relative;
-  padding: 17px 10px 17px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0;
-  overflow: hidden;
-  border-right: 1px solid rgb(203 213 225 / 70%);
-  background: linear-gradient(180deg, $blue-50 0%, #eef3f9 100%);
-  color: $slate-400;
-  font-size: 13px;
-  line-height: 1.8;
-  user-select: none;
-  box-shadow: inset -1px 0 0 rgb(255 255 255 / 70%);
-  @include mono-font;
-
-  span {
-    height: 27px;
-    display: flex;
-    align-items: center;
-
-    &.is-active {
-      position: relative;
-      color: $blue-600;
-      font-weight: 700;
-
-      &::before {
-        content: '';
-        position: absolute;
-        inset: -4px -8px;
-        border: 1px solid rgb(147 197 253 / 65%);
-        border-radius: 8px;
-        background: rgb(219 234 254 / 30%);
-        pointer-events: none;
-        z-index: -1;
-      }
-    }
-  }
 }
 
 .editor-canvas {
   position: relative;
-  flex: 1;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  box-shadow: inset 1px 0 0 rgb(255 255 255 / 75%);
 
   &::after {
     content: '';
@@ -848,40 +665,99 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 20px 24px;
+}
+
+.editor :deep(.cm-editor) {
+  height: 100%;
   border: 0;
-  outline: none;
-  resize: none;
-  overflow-y: auto;
-  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 98%)),
     transparent;
   color: $slate-700;
   font-size: 15px;
-  line-height: 1.8;
-  caret-color: #60a5fa;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%);
-  @include hidden-scrollbar;
   @include mono-font;
+}
 
-  &::selection {
-    background: rgb(191 219 254 / 42%);
-    color: #0f172a;
-  }
+.editor :deep(.cm-focused) {
+  outline: none;
+}
 
-  &::-moz-selection {
-    background: rgb(191 219 254 / 42%);
-    color: #0f172a;
-  }
+.editor :deep(.cm-scroller) {
+  overflow: auto;
+  line-height: 1.8;
+  @include hidden-scrollbar;
+}
 
-  &:focus {
-    outline: none;
-  }
+.editor :deep(.cm-content),
+.editor :deep(.cm-gutter) {
+  min-height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 
-  &::placeholder {
-    color: $slate-400;
-  }
+.editor :deep(.cm-content) {
+  caret-color: #60a5fa;
+}
+
+.editor :deep(.cm-line) {
+  padding: 0 24px;
+}
+
+.editor :deep(.cm-gutters) {
+  border-right: 1px solid rgb(203 213 225 / 70%);
+  background: linear-gradient(180deg, $blue-50 0%, #eef3f9 100%);
+  color: $slate-400;
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 70%);
+  @include mono-font;
+}
+
+.editor :deep(.cm-lineNumbers .cm-gutterElement) {
+  min-width: 2.4rem;
+  padding: 0 12px 0 0;
+  height: calc(1em * 1.8);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.editor :deep(.cm-selectionBackground) {
+  background: rgb(191 219 254 / 42%) !important;
+}
+
+.editor :deep(.cm-content ::selection) {
+  background: rgb(191 219 254 / 42%);
+  color: #0f172a;
+}
+
+.editor :deep(.cm-cursor) {
+  border-left-color: #60a5fa;
+}
+
+.editor :deep(.cm-placeholder) {
+  color: $slate-400;
+}
+
+.editor :deep(.cm-activeLine) {
+  background: transparent;
+  transition: background 0.16s ease;
+}
+
+.editor :deep(.cm-focused .cm-activeLine) {
+  background: rgb(219 234 254 / 52%);
+}
+
+.editor :deep(.cm-activeLineGutter) {
+  background: transparent;
+  color: $slate-400;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.editor :deep(.cm-focused .cm-activeLineGutter) {
+  background: rgb(219 234 254 / 42%);
+  color: $blue-600;
+  font-weight: 700;
 }
 
 .preview-panel {
@@ -903,12 +779,12 @@ onBeforeUnmount(() => {
 }
 
 .preview-toolbar-left {
-  font-size: 18px;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
   color: $slate-600;
+  font-size: 18px;
 }
 
 .preview-toolbar-right {
@@ -1055,14 +931,6 @@ onBeforeUnmount(() => {
   }
 }
 
-.page {
-  min-width: 1180px;
-}
-
-.panel {
-  min-height: 0;
-}
-
 .upload-placeholder {
   display: flex;
   flex-direction: column;
@@ -1148,7 +1016,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.el-dialog__body) {
-  padding: 200px 24px 24px;
+  padding: 20px 24px 24px;
 }
 
 :deep(.el-dialog__footer) {

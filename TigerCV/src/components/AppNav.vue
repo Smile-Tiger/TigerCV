@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useResumeStore } from '@/stores/resume'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -23,11 +24,12 @@ const handleSave = () => {
 }
 
 const capturePaper = async () => {
-  const paper = document.querySelector('.preview-paper') as HTMLElement
+  const paper = document.querySelector('.preview-paper') as HTMLElement | null
   if (!paper) {
     ElMessage.error('未找到简历预览内容')
     return null
   }
+
   return html2canvas(paper, {
     scale: 2,
     useCORS: true,
@@ -61,47 +63,57 @@ const navItems = [
   { label: '首页', to: '/home' },
   { label: '简历', to: '/home/writeResume' },
 ] as const
+
+const showEditorTools = computed(() => actionsVisible.value)
 </script>
 
 <template>
   <header class="app-nav">
     <div class="nav-container app-nav-inner">
-      <RouterLink class="nav-brand" to="/home" aria-label="TigerCV 首页">
-        <div class="eyebrow">TigerCV</div>
-      </RouterLink>
-
-      <nav class="nav-links" aria-label="主导航">
-        <RouterLink v-for="item in navItems" :key="item.to" class="nav-link" :to="item.to">
-          <span>{{ item.label }}</span>
+      <div class="nav-primary">
+        <RouterLink class="nav-brand" to="/home" aria-label="TigerCV 首页">
+          <div class="eyebrow">TigerCV</div>
         </RouterLink>
-      </nav>
 
-      <div class="nav-actions" :class="{ 'is-visible': actionsVisible }">
-        <button class="action-btn action-btn--save" type="button" @click="handleSave">
-          <el-icon>
-            <EpCheck />
-          </el-icon>
-          <span>保存</span>
-        </button>
+        <nav class="nav-links" aria-label="主导航">
+          <RouterLink v-for="item in navItems" :key="item.to" class="nav-link" :to="item.to">
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </nav>
+      </div>
 
-        <el-dropdown trigger="hover" placement="bottom-end" popper-class="export-dropdown-popper">
-          <button class="action-btn action-btn--export" type="button">
+      <div class="nav-secondary">
+        <div class="nav-actions" :class="{ 'is-visible': showEditorTools }">
+          <button class="action-btn action-btn--save" type="button" @click="handleSave">
             <el-icon>
-              <EpDownload />
+              <EpCheck />
             </el-icon>
-            <span>导出</span>
-            <el-icon class="arrow-icon">
-              <EpArrowDown />
-            </el-icon>
+            <span>保存</span>
           </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="item in exportItems" :key="item.label" @click="item.handler">
-                <span>{{ item.label }}</span>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+
+          <el-dropdown trigger="hover" placement="bottom-end" popper-class="export-dropdown-popper">
+            <button class="action-btn action-btn--export" type="button">
+              <el-icon>
+                <EpDownload />
+              </el-icon>
+              <span>导出</span>
+              <el-icon class="arrow-icon">
+                <EpArrowDown />
+              </el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="item in exportItems" :key="item.label" @click="item.handler">
+                  <span>{{ item.label }}</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+
+        <button class="login-btn" type="button">
+          登录
+        </button>
       </div>
     </div>
   </header>
@@ -118,17 +130,34 @@ const navItems = [
   z-index: 100;
   height: 64px;
   border-bottom: 1px solid rgb(255 255 255 / 40%);
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255 255 255 / 15%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 30px rgb(0 0 0 / 10%);
 }
 
 .app-nav-inner {
   height: 100%;
-  justify-content: center;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.nav-primary,
+.nav-secondary {
+  display: flex;
+  align-items: center;
+}
+
+.nav-primary {
+  gap: 28px;
+  min-width: 0;
+}
+
+.nav-secondary {
+  margin-left: auto;
+  gap: 14px;
 }
 
 .nav-brand {
@@ -155,24 +184,19 @@ const navItems = [
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
-  margin-left: auto;
 }
 
 .nav-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: 8px;
-  padding-left: 12px;
-  border-left: 1px solid rgb(226 232 240 / 60%);
-  max-width: 300px;
+  max-width: 0;
   opacity: 0;
   overflow: hidden;
   transition:
     max-width 0.3s ease,
     opacity 0.25s ease,
-    margin-left 0.3s ease,
-    padding-left 0.3s ease;
+    margin-right 0.3s ease;
 
   &.is-visible {
     max-width: 300px;
@@ -181,7 +205,8 @@ const navItems = [
   }
 }
 
-.action-btn {
+.action-btn,
+.login-btn {
   height: 36px;
   padding: 0 14px;
   display: inline-flex;
@@ -197,14 +222,31 @@ const navItems = [
     transform 0.16s ease,
     background 0.16s ease,
     border-color 0.16s ease,
-    box-shadow 0.16s ease;
+    box-shadow 0.16s ease,
+    color 0.16s ease;
 
   &:hover {
     transform: translateY(-1px);
   }
+}
 
+.action-btn {
   .el-icon {
     font-size: 16px;
+  }
+}
+
+.login-btn {
+  min-width: 80px;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  color: $slate-700;
+  box-shadow: 0 1px 2px rgb(148 163 184 / 10%);
+
+  &:hover {
+    border-color: rgb(191 219 254 / 90%);
+    color: $blue-600;
+    box-shadow: 0 4px 12px rgb(148 163 184 / 14%);
   }
 }
 
@@ -276,6 +318,61 @@ const navItems = [
     color: $color-primary;
     font-weight: 600;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .app-nav-inner {
+    gap: 12px;
+  }
+
+  .nav-primary {
+    gap: 14px;
+  }
+
+  .eyebrow {
+    font-size: 18px;
+    letter-spacing: 0.16em;
+  }
+
+  .nav-links {
+    gap: 8px;
+  }
+
+  .nav-link {
+    min-width: auto;
+    padding: 0 12px;
+  }
+
+  .login-btn {
+    min-width: 68px;
+    padding: 0 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-nav {
+    height: auto;
+  }
+
+  .app-nav-inner {
+    min-height: 64px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .nav-primary,
+  .nav-secondary {
+    width: 100%;
+  }
+
+  .nav-primary {
+    justify-content: space-between;
+  }
+
+  .nav-secondary {
+    justify-content: flex-end;
   }
 }
 </style>
