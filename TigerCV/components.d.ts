@@ -27,6 +27,8 @@ declare module 'vue' {
     EpPicture: typeof import('~icons/ep/picture')['default']
     EpUploadFilled: typeof import('~icons/ep/upload-filled')['default']
     PageTransition: typeof import('./src/components/PageTransition.vue')['default']
+    ResumeEditor: typeof import('./src/components/resume/ResumeEditor.vue')['default']
+    ResumePreview: typeof import('./src/components/resume/ResumePreview.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }

@@ -776,30 +776,27 @@ h1 {
 }
 
 .typewriter-line {
-  width: 100%;
+  width: min(760px, 100%);
   height: clamp(148px, 16vw, 184px);
   margin: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
   overflow: hidden;
-  text-align: center;
+  text-align: left;
 }
 
 .typewriter-copy {
-  max-width: min(760px, 100%);
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 8px;
+  width: 100%;
+  display: block;
 }
 
 .typewriter-text {
-  display: block;
+  display: inline;
   color: transparent;
   font-size: clamp(25px, 3.6vw, 42px);
   line-height: 1.42;
   letter-spacing: -0.04em;
-  text-wrap: balance;
   background: linear-gradient(180deg, #0f172a 0%, #2563eb 135%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -809,7 +806,8 @@ h1 {
   width: 3px;
   height: 1.08em;
   display: inline-block;
-  flex: 0 0 auto;
+  margin-left: 4px;
+  vertical-align: -0.08em;
   border-radius: 999px;
   background: linear-gradient(180deg, #93c5fd 0%, #2563eb 100%);
   box-shadow: 0 0 0 6px rgb(191 219 254 / 18%);
@@ -1040,7 +1038,7 @@ h1 {
   }
 
   .typewriter-copy {
-    gap: 6px;
+    width: 100%;
   }
 }
 
